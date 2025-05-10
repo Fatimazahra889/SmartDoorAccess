@@ -1,38 +1,40 @@
-// LINK: https://wokwi.com/projects/429863058970909697
-
-
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <Keypad.h>
 
-// ------ Configuration ------
-#define BUTTON_PIN 25
-#define LED_PIN 26
+// ------ WiFi & Server Configuration ------
 const char* ssid = "Wokwi-GUEST";
 const char* password = "";
-const char* adresse_serveur = "http://64cc-154-144-229-242.ngrok-free.app/uid";
+const char* server_address = "http://4cf1-105-154-76-132.ngrok-free.app/uid";
 
-// ------ RFIDReader Class (Simulation) ------
-class RFIDReader {
-  public:
-    String scanner_carte() {
-      // Simulate reading a UID
-      return "123456";
-    }
+// ------ LED ------
+#define LED_PIN 26
+
+// ------ Push Button ------
+#define BUTTON_PIN 25  // Adjust if connected to another pin
+
+// ------ Keypad ------
+#define ROW_NUM     4
+#define COLUMN_NUM  4
+
+char keys[ROW_NUM][COLUMN_NUM] = {
+  {'1', '2', '3', 'A'},
+  {'4', '5', '6', 'B'},
+  {'7', '8', '9', 'C'},
+  {'*', '0', '#', 'D'}
 };
 
-RFIDReader lecteur_rfid;
+byte pin_rows[ROW_NUM] = {19, 18, 5, 17}; 
+byte pin_column[COLUMN_NUM] = {16, 4, 0, 2};
 
-// ------ Fonctions selon UML ------
-String lire_carte() {
-  return lecteur_rfid.scanner_carte();
-}
+Keypad keypad = Keypad(makeKeymap(keys), pin_rows, pin_column, ROW_NUM, COLUMN_NUM);
 
-bool envoyer_uid_au_serveur(String uid) {
+// ------ Network & Door Control Functions ------
+bool send_uid_to_server(String uid) {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    
-    http.begin(adresse_serveur); // Regular HTTP (no SSL)
-    http.setConnectTimeout(10000);  
+    http.begin(server_address);
+    http.setConnectTimeout(10000);
     http.setTimeout(10000);
     http.addHeader("Content-Type", "application/json");
 
@@ -42,8 +44,8 @@ bool envoyer_uid_au_serveur(String uid) {
     if (code == HTTP_CODE_OK) {
       String response = http.getString();
       response.trim();
-      bool access = (response == "True");
-      recevoir_reponse(access);
+      bool access = (response == "True" || response == "true");
+      control_door(access);
       http.end();
       return access;
     } else {
@@ -51,22 +53,18 @@ bool envoyer_uid_au_serveur(String uid) {
     }
     http.end();
   }
-  recevoir_reponse(false);
+  control_door(false);
   return false;
 }
 
-void recevoir_reponse(bool reponse) {
-  controler_porte(reponse);
-}
-
-void controler_porte(bool reponse) {
-  if (reponse) {
-    Serial.println("Accès autorisé : porte ouverte");
+void control_door(bool access_granted) {
+  if (access_granted) {
+    Serial.println("Access granted: door unlocked");
     digitalWrite(LED_PIN, HIGH);
-    delay(2000); // Simulate door open duration
+    delay(2000);
     digitalWrite(LED_PIN, LOW);
   } else {
-    Serial.println("Accès refusé");
+    Serial.println("Access denied");
     digitalWrite(LED_PIN, LOW);
   }
 }
@@ -74,28 +72,42 @@ void controler_porte(bool reponse) {
 // ------ Setup & Loop ------
 void setup() {
   Serial.begin(115200);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   WiFi.begin(ssid, password);
-  Serial.print("Connexion WiFi");
+  Serial.print("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nConnecté !");
-
-  // Fixed print statement:
-  Serial.print("Testing connection to ");
-  Serial.println(adresse_serveur);
-  Serial.println("If this hangs, Wokwi can't reach Ngrok");
+  Serial.println("\nConnected to WiFi!");
 }
 
+String uid = "";
+
 void loop() {
+  char key = keypad.getKey();
+
+  if (key) {
+    if (key == 'C') {
+      Serial.println("Input cleared");
+      uid = "";
+    } else {
+      uid += key;
+      Serial.print("*"); // Change to Serial.print(key); to show actual digits
+    }
+  }
+
+  // When pushbutton is pressed
   if (digitalRead(BUTTON_PIN) == LOW) {
-    String uid = lire_carte();
-    envoyer_uid_au_serveur(uid);
-    delay(1000); // Debounce
+    if (uid.length() > 0) {
+      Serial.print("Entered UID: ");
+      Serial.println(uid);
+      send_uid_to_server(uid);
+      uid = ""; // Reset after sending
+      delay(1000); // Debounce delay
+    }
   }
 }
