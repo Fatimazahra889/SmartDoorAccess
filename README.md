@@ -2,7 +2,7 @@
 
 UnLok is a secure and smart door system using RFID codes. It replaces traditional keys and lets users unlock a door using a keypad. Admins can monitor door status and access logs live via a mobile app.
 
-----
+---
 
 ## Technologies Used
 
